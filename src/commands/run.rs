@@ -1,7 +1,8 @@
+use std::cmp::Ordering;
 use std::str::FromStr;
 
 use crate::commands;
-use crate::config::Configuration;
+use crate::config;
 
 pub fn run() -> Result<(), commands::Error> {
     let lock_file = crate::get_lock_file();
@@ -17,37 +18,40 @@ pub fn run() -> Result<(), commands::Error> {
 
         match chrono::NaiveDate::from_str(&content) {
             Ok(date) => match date.cmp(&now.date_naive()) {
-                std::cmp::Ordering::Equal | std::cmp::Ordering::Greater => {
-                    return Ok(());
-                }
-                std::cmp::Ordering::Less => {
-                    // The date already passed.
+                // The application is currently disabled.
+                Ordering::Equal | Ordering::Greater => return Ok(()),
+                Ordering::Less => {
+                    // The date already passed. Remove lock.
                     std::fs::remove_file(&lock_file)?;
                 }
             },
             Err(_) => {
-                // The file's contents are invalid.
+                // The lock's contents are invalid. Remove lock.
                 std::fs::remove_file(&lock_file)?;
             }
         };
     }
 
-    let config: Configuration = {
+    let config: config::Configuration = {
         let file = crate::get_config_home().join("Knight.toml");
+        std::fs::create_dir_all(file.parent().unwrap())?;
 
         match std::fs::read_to_string(&file) {
             Ok(content) => toml::from_str(&content)?,
             Err(err) => match err.kind() {
-                std::io::ErrorKind::NotFound => {
-                    // Load default configuration
-                    toml::from_str(include_str!("../../Knight.toml"))?
-                }
+                std::io::ErrorKind::NotFound => toml::from_str(include_str!("../../Knight.toml"))?,
                 _ => return Err(err.into()),
             },
         }
     };
 
-    let (sunrise, sunset) = get_times(&config);
+    let (sunrise, sunset) = if config.location.enabled {
+        let client = reqwest::blocking::Client::new();
+        let location = get_location(&client, &config.location);
+        get_times(&client, &location, &config.fallback)
+    } else {
+        (config.fallback.sunrise, config.fallback.sunset)
+    };
 
     if now.time() >= sunrise && now.time() < sunset {
         crate::set_light_theme()?;
@@ -56,6 +60,48 @@ pub fn run() -> Result<(), commands::Error> {
     }
 
     Ok(())
+}
+
+#[derive(serde::Deserialize)]
+struct LocationResponse {
+    longitude: f32,
+    latitude: f32,
+}
+// TODO: Cache response once a day.
+
+fn get_location(
+    client: &reqwest::blocking::Client,
+    location: &config::Location,
+) -> config::Location {
+    if let (None, None) = (location.longitude, location.latitude) {
+        let url = "https://freeipapi.com/api/json/";
+
+        match client.get(url).send() {
+            Ok(response) => {
+                let body = response.text().expect("expected response to be valid json");
+                let data: LocationResponse = serde_json::from_str(&body).unwrap();
+
+                return config::Location {
+                    enabled: location.enabled,
+                    longitude: Some(data.longitude),
+                    latitude: Some(data.latitude),
+                };
+            }
+            Err(_) => {
+                return config::Location {
+                    enabled: true,
+                    longitude: None,
+                    latitude: None,
+                };
+            }
+        };
+    };
+
+    config::Location {
+        enabled: location.enabled,
+        longitude: location.longitude,
+        latitude: location.latitude,
+    }
 }
 
 #[derive(serde::Deserialize)]
@@ -69,59 +115,35 @@ struct Results {
     sunset: chrono::NaiveTime,
 }
 
-fn get_times(config: &Configuration) -> (chrono::NaiveTime, chrono::NaiveTime) {
-    if config.location.enabled {
-        let client = reqwest::blocking::Client::new();
-        let location = get_location(&config, &client);
+// TODO: Cache response once a day.
 
-        match location {
-            (Some(longitude), Some(latitude)) => {
-                let url = format!(
-                    "https://api.sunrisesunset.io/json?lng={longitude}&lat={latitude}&time_format=24",
-                );
-
-                match client.get(&url).send() {
-                    Ok(response) => {
-                        let body = response.text().expect("expected response to be valid json");
-                        let data: TimeResponse = serde_json::from_str(&body).unwrap();
-                        (data.results.sunrise, data.results.sunset)
-                    }
-                    Err(_) => return (config.fallback.sunrise, config.fallback.sunset),
-                }
-            }
-            (Some(_), None) | (None, Some(_)) => {
-                panic!("both longitude and latitude must be set")
-            }
-            (None, None) => todo!(),
-        };
-    }
-
-    (config.fallback.sunrise, config.fallback.sunset)
-}
-
-#[derive(serde::Deserialize)]
-struct LocationResponse {
-    longitude: f32,
-    latitude: f32,
-}
-
-fn get_location(
-    config: &Configuration,
+fn get_times(
     client: &reqwest::blocking::Client,
-) -> (Option<f32>, Option<f32>) {
-    if let (None, None) = (config.location.longitude, config.location.latitude) {
-        let url = "https://freeipapi.com/api/json/";
+    location: &config::Location,
+    fallback: &config::Fallback,
+) -> (chrono::NaiveTime, chrono::NaiveTime) {
+    match (location.longitude, location.latitude) {
+        (Some(longitude), Some(latitude)) => {
+            let url = format!(
+                "https://api.sunrisesunset.io/json?lng={longitude}&lat={latitude}&time_format=24",
+            );
 
-        match client.get(url).send() {
-            Ok(response) => {
-                let body = response.text().expect("expected response to be valid json");
-                let data: LocationResponse = serde_json::from_str(&body).unwrap();
-
-                return (Some(data.longitude), Some(data.latitude));
+            match client.get(&url).send() {
+                Ok(response) => {
+                    let body = response.text().expect("expected response to be valid json");
+                    let data: TimeResponse = serde_json::from_str(&body).unwrap();
+                    (data.results.sunrise, data.results.sunset)
+                }
+                Err(_) => return (fallback.sunrise, fallback.sunset),
             }
-            Err(_) => return (None, None),
-        };
-    };
-
-    (config.location.longitude, config.location.latitude)
+        }
+        (Some(_), None) | (None, Some(_)) => {
+            panic!("both longitude and latitude must be set")
+        }
+        (None, None) => {
+            // This case happens when the `location` feature is enabled,
+            // but there was a problem getting the user's location.
+            (fallback.sunrise, fallback.sunset)
+        }
+    }
 }

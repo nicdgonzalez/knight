@@ -1,7 +1,6 @@
 use clap::Parser;
 
 use knight::commands;
-use knight::config::Configuration;
 
 /// 🛡️ Automatically switch the system between light and dark theme.
 #[derive(Debug, clap::Parser)]
@@ -22,9 +21,6 @@ fn main() {
 }
 
 fn try_main() -> Result<(), commands::Error> {
-    let content = include_str!("../Knight.toml");
-    let _config: Configuration = toml::from_str(&content).unwrap();
-
     let args = Args::parse();
     commands::handle_command(&args.command)
 }
