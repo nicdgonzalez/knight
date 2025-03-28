@@ -18,17 +18,23 @@ Install this project using Rust's package manager, cargo:
 cargo install --git https://github.com/nicdgonzalez/knight
 ```
 
-### Scheduling
+### ⏳ Scheduling
 
 In order to have the program run itself throughout the day, you need to use
-some sort of scheduler (e.g., systemd, cron, etc.). Here are some examples for
-popular scheduling services:
+some sort of scheduler.
 
-Copy and paste the following into a file named `knight.sh`:
+Here are some example scripts to help quickstart the process:
 
 <details>
+    <summary>systemd</summary>
 
-<summary>Systemd</summmary>
+To check if your system uses systemd:
+
+```bash
+command -v systemctl > /dev/null && echo "true" || echo "false"
+```
+
+Copy and paste the following into a file named `knight.sh`:
 
 ```bash
 #!/usr/bin/bash
@@ -44,8 +50,7 @@ Description=Changes the system between light and dark theme automatically
 
 [Service]
 ExecStart=$HOME/.cargo/bin/knight
-Type=exec
-";
+Type=exec"
 
 TIMER_FILE="\
 [Unit]
@@ -59,8 +64,7 @@ Persistent=true
 WakeSystem=false
 
 [Install]
-WantedBy=timers.target
-";
+WantedBy=timers.target"
 
 main() {
     # Write the configurations into their respective files.
@@ -88,11 +92,25 @@ main() {
 main "$@"
 ```
 
+Now run the script using bash:
+
+```bash
+bash "$PWD/knight.sh"
+```
+
 </details>
 
 <details>
+    <summary>cronie</summary>
 
-<summary>Cron</summary>
+Make sure to install `crontab` via your favorite package manager.
+
+```bash
+# Fedora
+sudo dnf install cronie
+```
+
+Copy and paste the following into a file named `knight.sh`:
 
 ```bash
 #!/usr/bin/bash
@@ -120,31 +138,22 @@ main() {
 main "$@"
 ```
 
-</details>
-
 Now run the script using bash:
 
 ```bash
 bash "$PWD/knight.sh"
 ```
 
+</details>
+
 ## 🛠️ Configuration
 
-Knight is configurable to better fit your needs. An optional configuration file
-can be created at `$XDG_CONFIG_HOME/knight/Knight.toml`. For more details, see
-[Knight.toml](./Knight.toml).
+Knight allows you to tailor its behaviors to better fit your needs;
+an optional configuration file can be created at
+`$XDG_CONFIG_HOME/knight/Knight.toml`. For additional information
+about the different options, see [Knight.toml](./Knight.toml).
 
-### Example
-
-```toml
-[fallback]
-sunrise = "06:30:00"
-sunset = "18:30:00"
-
-[location]
-enabled = true
-
-# Uncomment and set the following values if setting manually:
-# longitude = 0.0
-# latitude = 0.0
-```
+> [!NOTE]
+> The `$XDG_CONFIG_HOME` environment variable typically points to a directory
+> where user-specific configuration files are stored. If it is not set,
+> the default location is usually `$HOME/.config`.
