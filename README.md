@@ -57,8 +57,8 @@ TIMER_FILE="\
 Description=A timer for Knight
 
 [Timer]
-# Runs once every five minutes.
-OnCalendar=*-*-* *:*/5:00
+# Runs once every thirty minutes.
+OnCalendar=*-*-* *:*/30:00
 # Run the task if it was missed (e.g., because the system was asleep).
 Persistent=true
 WakeSystem=false
@@ -121,8 +121,8 @@ set -eo pipefail
 SYSTEMD_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 
 main() {
-    # This job will execute the program every 5 minutes.
-    local job="*/5 * * * * $HOME/.cargo/bin/knight"
+    # This job will execute the program every thirty minutes.
+    local job="*/30 * * * * $HOME/.cargo/bin/knight"
 
     # If the job already exists, return.
     if grep --fixed-strings "$job" -- <(crontab -l) > /dev/null; then
