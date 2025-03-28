@@ -8,11 +8,11 @@ of day for the GNOME desktop environment on Linux.
 - Automatically toggle between light and dark theme.
 - Determines sunrise and sunset times based on your location.
 - Configurable through a dedicated configuration file.
-- Supports temporarily pausing automatic switching.
+- Supports changing themes manually, and pausing the automatic theme switcher.
 
 ## 📦 Installation
 
-Install this project using Rust's package manager, cargo:
+Install this application using cargo:
 
 ```bash
 cargo install --git https://github.com/nicdgonzalez/knight
@@ -20,10 +20,13 @@ cargo install --git https://github.com/nicdgonzalez/knight
 
 ### ⏳ Scheduling
 
+The program alone only determines which theme should be set at any given time.
 In order to have the program run itself throughout the day, you need to use
-some sort of scheduler.
+a scheduler.
 
-Here are some example scripts to help quickstart the process:
+Most Linux distributions have built-in schedulers, like [systemd], and
+alternatives are easy to install using package managers. The following are
+example services + scripts to help quickstart the process:
 
 <details>
     <summary>systemd</summary>
@@ -92,7 +95,7 @@ main() {
 main "$@"
 ```
 
-Now run the script using bash:
+Now run the script with bash:
 
 ```bash
 bash "$PWD/knight.sh"
@@ -103,10 +106,10 @@ bash "$PWD/knight.sh"
 <details>
     <summary>cronie</summary>
 
-Make sure to install `crontab` via your favorite package manager.
+Make sure to install the `crontab` command via your favorite package manager:
 
 ```bash
-# Fedora
+# dnf:
 sudo dnf install cronie
 ```
 
@@ -138,7 +141,7 @@ main() {
 main "$@"
 ```
 
-Now run the script using bash:
+Now run the script with bash:
 
 ```bash
 bash "$PWD/knight.sh"
@@ -157,3 +160,14 @@ about the different options, see [Knight.toml](./Knight.toml).
 > The `$XDG_CONFIG_HOME` environment variable typically points to a directory
 > where user-specific configuration files are stored. If it is not set,
 > the default location is usually `$HOME/.config`.
+
+## Acknowledgements
+
+These wonderful free tools make this whole thing possible:
+
+- [Free IP API]: Determines your geolocation.
+- [SunriseSunset.io]: Determines your location's sunrise and sunset times.
+
+[systemd]: https://en.wikipedia.org/wiki/Systemd
+[free ip api]: https://freeipapi.com
+[sunrisesunset.io]: https://sunrisesunset.io/
