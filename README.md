@@ -52,7 +52,7 @@ SERVICE_FILE="\
 Description=Changes the system between light and dark theme automatically
 
 [Service]
-ExecStart=$HOME/.cargo/bin/knight
+ExecStart=$HOME/.cargo/bin/knight run
 Type=exec"
 
 TIMER_FILE="\
@@ -125,7 +125,7 @@ SYSTEMD_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 
 main() {
     # This job will execute the program every thirty minutes.
-    local job="*/30 * * * * $HOME/.cargo/bin/knight"
+    local job="*/30 * * * * $HOME/.cargo/bin/knight run"
 
     # If the job already exists, return.
     if grep --fixed-strings "$job" -- <(crontab -l) > /dev/null; then
