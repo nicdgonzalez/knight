@@ -3,6 +3,7 @@ use std::str::FromStr;
 
 use crate::commands;
 use crate::config;
+use crate::get_cache_home;
 
 pub fn run() -> Result<(), commands::Error> {
     let lock_file = crate::get_lock_file();
@@ -45,12 +46,42 @@ pub fn run() -> Result<(), commands::Error> {
         }
     };
 
-    let (sunrise, sunset) = if config.location.enabled {
-        let client = reqwest::blocking::Client::new();
-        let location = get_location(&client, &config.location);
-        get_times(&client, &location, &config.fallback)
+    let sunrise: chrono::NaiveTime;
+    let sunset: chrono::NaiveTime;
+
+    if config.location.enabled {
+        let cache_home = get_cache_home();
+
+        let time_file = cache_home.join("times").join(now.date_naive().to_string());
+        if let Ok(times) = std::fs::read_to_string(&time_file) {
+            // Get cached times.
+            // TODO: Properly handle errors.
+            let times = times.split_once(",").unwrap();
+            sunrise = chrono::NaiveTime::from_str(times.0).unwrap();
+            sunset = chrono::NaiveTime::from_str(times.1).unwrap();
+        } else {
+            let client = reqwest::blocking::Client::new();
+            let location_file = cache_home.join("location.txt");
+
+            let location: config::Location = {
+                if let Ok(coordinates) = std::fs::read_to_string(&location_file) {
+                    // Get cached location.
+                    // TODO: Properly handle errors.
+                    let coordinates = coordinates.split_once(",").unwrap();
+                    config::Location {
+                        enabled: config.location.enabled,
+                        longitude: Some(coordinates.0.parse().unwrap()),
+                        latitude: Some(coordinates.1.parse().unwrap()),
+                    }
+                } else {
+                    get_location(&client, &config.location)
+                }
+            };
+
+            (sunrise, sunset) = get_times(&client, &location, &config.fallback);
+        };
     } else {
-        (config.fallback.sunrise, config.fallback.sunset)
+        (sunrise, sunset) = (config.fallback.sunrise, config.fallback.sunset);
     };
 
     if now.time() >= sunrise && now.time() < sunset {
@@ -67,7 +98,8 @@ struct LocationResponse {
     longitude: f32,
     latitude: f32,
 }
-// TODO: Cache response once a day.
+
+// TODO: Add section to README regarding how to delete the cache file.
 
 fn get_location(
     client: &reqwest::blocking::Client,
@@ -80,6 +112,13 @@ fn get_location(
             Ok(response) => {
                 let body = response.text().expect("expected response to be valid json");
                 let data: LocationResponse = serde_json::from_str(&body).unwrap();
+
+                // TODO: Don't panic on cache-related operations.
+                let cache_file = get_cache_home().join("location.txt");
+                std::fs::create_dir_all(&cache_file.parent().unwrap())
+                    .expect("failed to create cache subdirectory");
+                std::fs::write(&cache_file, format!("{},{}", data.longitude, data.latitude))
+                    .expect("failed to cache location data");
 
                 return config::Location {
                     enabled: location.enabled,
@@ -111,11 +150,12 @@ struct TimeResponse {
 
 #[derive(serde::Deserialize)]
 struct Results {
+    date: chrono::NaiveDate,
     sunrise: chrono::NaiveTime,
     sunset: chrono::NaiveTime,
 }
 
-// TODO: Cache response once a day.
+// TODO: Add section to README regarding how to delete the cache file.
 
 fn get_times(
     client: &reqwest::blocking::Client,
@@ -132,6 +172,17 @@ fn get_times(
                 Ok(response) => {
                     let body = response.text().expect("expected response to be valid json");
                     let data: TimeResponse = serde_json::from_str(&body).unwrap();
+
+                    // TODO: Don't panic on cache-related operations.
+                    let times_cache = get_cache_home().join("times");
+                    std::fs::create_dir_all(&times_cache).unwrap();
+                    let cache_file = times_cache.join(&data.results.date.to_string());
+                    std::fs::write(
+                        &cache_file,
+                        format!("{},{}", data.results.sunrise, data.results.sunset),
+                    )
+                    .expect("failed to cache times data");
+
                     (data.results.sunrise, data.results.sunset)
                 }
                 Err(_) => return (fallback.sunrise, fallback.sunset),
