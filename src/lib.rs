@@ -3,7 +3,13 @@ pub mod config;
 
 pub fn get_config_home() -> std::path::PathBuf {
     dirs::config_dir()
-        .expect("unable to determine the user's config directory")
+        .expect("unable to get user's config directory")
+        .join("knight")
+}
+
+pub fn get_cache_home() -> std::path::PathBuf {
+    dirs::cache_dir()
+        .expect("failed to get user's cache directory")
         .join("knight")
 }
 
