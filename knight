@@ -1,0 +1,171 @@
+#!/usr/bin/bash
+
+set -eo pipefail
+[ ! -z "${TRACE+x}" ] && set -x
+
+KNIGHT_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}/knight"
+SUNRISE_DEFAULT="06:30:00"
+SUNSET_DEFAULT="19:30:00"
+
+main() {
+    # Ensure the expected dependencies are installed.
+    validate_dependencies
+
+    # Handle command-line options (--help, --version, etc.).
+    parse_options "$@"
+
+    # Handle theme switching
+    if [ -e "$KNIGHT_CONFIG_HOME/.disabled" ]; then
+        local content="$(cat "$KNIGHT_CONFIG_HOME/.disabled")"
+
+        # Knight was disabled indefinitely.
+        if [[ $content == "" ]]; then
+            exit 0
+        fi
+
+        # Check if theme was set manually.
+        if [[ $content < $(date --iso-8601=date) ]]; then
+            # Theme was set manually the day before, remove temporary lock.
+            handle_enable > /dev/null
+        else
+            # Theme was set manually at some point today, leave it as-is.
+            return 0
+        fi
+    fi
+
+    echo >&2 "Knight is currently enabled!"
+
+    # Get the current time in the same format as SunriseSunset.io's API.
+    local now="$(date --iso-8601=seconds \
+        | awk --field-separator='T' '{print $2}' \
+        | awk --field-separator='-' '{print $1}' \
+    )"
+
+    # I have not considered any edge cases yet... :)
+    if [[ $now > $SUNRISE_DEFAULT ]] && [[ $now < $SUNSET_DEFAULT ]]; then
+        set_light_theme
+    else
+        set_dark_theme
+    fi
+}
+
+validate_dependencies() {
+    if ! command -v systemctl > /dev/null; then
+        echo >&2 "error: expected system to use systemctl to manage services"
+        return 1
+    fi
+
+    if ! command -v gsettings > /dev/null; then
+        echo >&2 "error: expected system to use the GNOME desktop environment"
+        return 1
+    fi
+}
+
+parse_options() {
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            '-h' | '--help')
+                display_help
+                exit 0
+                ;;
+            '-V' | '--version')
+                display_version
+                exit 0
+                ;;
+            '--enable')
+                handle_enable
+                exit 0
+                ;;
+            '--disable')
+                handle_disable
+                exit 0
+                ;;
+            '--set')
+                shift
+                handle_set_theme "$@"
+                exit 0
+                ;;
+            '--')
+                shift
+                break
+                ;;
+            '-'*)
+                echo >&2 "error: unknown option: $1"
+                exit 1
+                ;;
+            *)
+                break
+                ;;
+        esac
+        shift
+    done
+}
+
+display_help() {
+    echo "\
+🛡️ Automatically switch the system between light and dark theme.
+
+USAGE: $(basename "$0") [OPTIONS]
+
+OPTIONS:
+  -h, --help          Display this help message and exit.
+  -V, --version       Display the current version and exit.
+  --enable            If disabled, re-enable automatic theme switching.
+  --disable           Pause automatic theme switching.
+  --set [light|dark]  Manually set the theme for today (temporarily --disable).
+
+Repository: https://github.com/nicdgonzalez/knight"
+}
+
+display_version() {
+    echo "knight 0.1.0"
+}
+
+handle_enable() {
+    # Enable Knight services if disabled.
+    local file="$KNIGHT_CONFIG_HOME/.disabled"
+    rm "$file" 2> /dev/null && echo >&2 "Knight is now enabled." \
+        || echo >&2 "Knight was already enabled." && return 1
+}
+
+handle_disable() {
+    # Disable Knight services if enabled.
+    local file="$KNIGHT_CONFIG_HOME/.disabled"
+    mkdir --parents "$(dirname "$file")" \
+        && touch "$file" \
+        && echo >&2 "Knight is now disabled."
+}
+
+handle_set_theme() {
+    declare -r theme="$1"
+
+    case "$theme" in
+        "light")
+            set_light_theme
+            echo >&2 "Setting light theme!"
+            ;;
+        "dark")
+            set_dark_theme
+            echo >&2 "Setting dark theme!"
+            ;;
+        "")
+            echo >&2 "error: expected a theme option: light, dark"
+            return 1
+            ;;
+        *)
+            echo >&2 "error: invalid theme option: $theme"
+            return 1
+            ;;
+    esac
+}
+
+set_light_theme() {
+    gsettings set org.gnome.desktop.interface color-scheme default
+}
+
+set_dark_theme() {
+    gsettings set org.gnome.desktop.interface color-scheme prefer-dark
+}
+
+# The main entry point to the program.
+main "$@"
