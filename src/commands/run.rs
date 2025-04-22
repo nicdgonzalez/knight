@@ -148,6 +148,11 @@ fn get_daylight(
     };
 
     if let Some(g) = geolocation {
+        #[derive(Debug, serde::Deserialize)]
+        struct Response {
+            results: Daylight,
+        }
+
         let latitude = g.latitude;
         let longitude = g.longitude;
 
@@ -160,13 +165,13 @@ fn get_daylight(
 
         if let Ok(response) = client.get(url).send() {
             let body = response.text().expect("failed to decode response");
-            let data: Daylight =
+            let data: Response =
                 serde_json::from_str(&body).expect("expected body to be valid json");
 
-            let contents = format!("{},{}", data.sunrise, data.sunset);
+            let contents = format!("{},{}", data.results.sunrise, data.results.sunset);
             std::fs::write(&cache_file, &contents)?;
 
-            return Ok(data);
+            return Ok(data.results);
         }
     }
 
