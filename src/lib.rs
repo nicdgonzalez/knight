@@ -1,23 +1,27 @@
-pub mod commands;
-pub mod config;
+#![warn(missing_docs)]
 
-pub fn get_config_home() -> std::path::PathBuf {
+pub mod commands;
+mod config;
+
+pub(crate) use config::{Config, Fallback, Location};
+
+pub(crate) fn get_config_home() -> std::path::PathBuf {
     dirs::config_dir()
         .expect("unable to get user's config directory")
         .join("knight")
 }
 
-pub fn get_cache_home() -> std::path::PathBuf {
+pub(crate) fn get_cache_home() -> std::path::PathBuf {
     dirs::cache_dir()
         .expect("failed to get user's cache directory")
         .join("knight")
 }
 
-pub fn get_lock_file() -> std::path::PathBuf {
+pub(crate) fn get_disabled_file() -> std::path::PathBuf {
     get_config_home().join(".disabled")
 }
 
-pub fn set_light_theme() -> Result<(), commands::Error> {
+pub(crate) fn set_light_theme() -> Result<(), commands::Error> {
     std::process::Command::new("gsettings")
         .args([
             "set",
@@ -30,7 +34,7 @@ pub fn set_light_theme() -> Result<(), commands::Error> {
     Ok(())
 }
 
-pub fn set_dark_theme() -> Result<(), commands::Error> {
+pub(crate) fn set_dark_theme() -> Result<(), commands::Error> {
     std::process::Command::new("gsettings")
         .args([
             "set",

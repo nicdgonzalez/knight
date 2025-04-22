@@ -6,7 +6,9 @@ use knight::commands;
 #[derive(Debug, clap::Parser)]
 #[command(
     version,
-    after_help = "Repository: https://github.com/nicdgonzalez/knight"
+    after_help = "\
+        Repository: https://github.com/nicdgonzalez/knight\n\
+        Issues: https://github.com/nicdgonzalez/knight/issues"
 )]
 pub struct Args {
     #[command(subcommand)]
