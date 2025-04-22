@@ -748,6 +748,7 @@ dependencies = [
  "chrono",
  "clap",
  "dirs",
+ "log",
  "reqwest",
  "serde",
  "serde_json",

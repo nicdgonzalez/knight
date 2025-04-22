@@ -1,6 +1,6 @@
 #[derive(Debug, Default, serde::Deserialize)]
 #[serde(default)]
-pub struct Configuration {
+pub struct Config {
     pub fallback: Fallback,
     pub location: Location,
 }

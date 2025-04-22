@@ -1,200 +1,232 @@
-use std::cmp::Ordering;
-use std::str::FromStr;
+use std::{cmp::Ordering, str::FromStr};
 
-use crate::commands;
-use crate::config;
-use crate::get_cache_home;
-
-pub fn run() -> Result<(), commands::Error> {
-    let lock_file = crate::get_lock_file();
-    std::fs::create_dir_all(lock_file.parent().unwrap())?;
-    let now = chrono::Local::now();
-
-    // If the file is empty, it means it is disabled indefinitely. Otherwise,
-    // it should contain the last date for which the application is disabled.
-    if let Ok(content) = std::fs::read_to_string(&lock_file) {
-        if &content == "" {
-            return Ok(());
-        }
-
-        match chrono::NaiveDate::from_str(&content) {
-            Ok(date) => match date.cmp(&now.date_naive()) {
-                // The application is currently disabled.
-                Ordering::Equal | Ordering::Greater => return Ok(()),
-                Ordering::Less => {
-                    // The date already passed. Remove lock.
-                    std::fs::remove_file(&lock_file)?;
-                }
-            },
-            Err(_) => {
-                // The lock's contents are invalid. Remove lock.
-                std::fs::remove_file(&lock_file)?;
-            }
-        };
-    }
-
-    let config: config::Configuration = {
-        let file = crate::get_config_home().join("Knight.toml");
-        std::fs::create_dir_all(file.parent().unwrap())?;
-
-        match std::fs::read_to_string(&file) {
-            Ok(content) => toml::from_str(&content)?,
-            Err(err) => match err.kind() {
-                std::io::ErrorKind::NotFound => toml::from_str(include_str!("../../Knight.toml"))?,
-                _ => return Err(err.into()),
-            },
-        }
-    };
-
-    let sunrise: chrono::NaiveTime;
-    let sunset: chrono::NaiveTime;
-
-    if config.location.enabled {
-        let cache_home = get_cache_home();
-
-        let time_file = cache_home.join("times").join(now.date_naive().to_string());
-        if let Ok(times) = std::fs::read_to_string(&time_file) {
-            // Get cached times.
-            // TODO: Properly handle errors.
-            let times = times.split_once(",").unwrap();
-            sunrise = chrono::NaiveTime::from_str(times.0).unwrap();
-            sunset = chrono::NaiveTime::from_str(times.1).unwrap();
-        } else {
-            let client = reqwest::blocking::Client::new();
-            let location_file = cache_home.join("location.txt");
-
-            let location: config::Location = {
-                if let Ok(coordinates) = std::fs::read_to_string(&location_file) {
-                    // Get cached location.
-                    // TODO: Properly handle errors.
-                    let coordinates = coordinates.split_once(",").unwrap();
-                    config::Location {
-                        enabled: config.location.enabled,
-                        longitude: Some(coordinates.0.parse().unwrap()),
-                        latitude: Some(coordinates.1.parse().unwrap()),
-                    }
-                } else {
-                    get_location(&client, &config.location)
-                }
-            };
-
-            (sunrise, sunset) = get_times(&client, &location, &config.fallback);
-        };
-    } else {
-        (sunrise, sunset) = (config.fallback.sunrise, config.fallback.sunset);
-    };
-
-    if now.time() >= sunrise && now.time() < sunset {
-        crate::set_light_theme()?;
-    } else {
-        crate::set_dark_theme()?;
-    }
-
-    Ok(())
-}
-
-#[derive(serde::Deserialize)]
-struct LocationResponse {
-    longitude: f32,
-    latitude: f32,
-}
-
-// TODO: Add section to README regarding how to delete the cache file.
-
-fn get_location(
-    client: &reqwest::blocking::Client,
-    location: &config::Location,
-) -> config::Location {
-    if let (None, None) = (location.longitude, location.latitude) {
-        let url = "https://freeipapi.com/api/json/";
-
-        match client.get(url).send() {
-            Ok(response) => {
-                let body = response.text().expect("expected response to be valid json");
-                let data: LocationResponse = serde_json::from_str(&body).unwrap();
-
-                // TODO: Don't panic on cache-related operations.
-                let cache_file = get_cache_home().join("location.txt");
-                std::fs::create_dir_all(&cache_file.parent().unwrap())
-                    .expect("failed to create cache subdirectory");
-                std::fs::write(&cache_file, format!("{},{}", data.longitude, data.latitude))
-                    .expect("failed to cache location data");
-
-                return config::Location {
-                    enabled: location.enabled,
-                    longitude: Some(data.longitude),
-                    latitude: Some(data.latitude),
-                };
-            }
-            Err(_) => {
-                return config::Location {
-                    enabled: true,
-                    longitude: None,
-                    latitude: None,
-                };
-            }
-        };
-    };
-
-    config::Location {
-        enabled: location.enabled,
-        longitude: location.longitude,
-        latitude: location.latitude,
-    }
-}
-
-#[derive(serde::Deserialize)]
-struct TimeResponse {
-    results: Results,
-}
-
-#[derive(serde::Deserialize)]
-struct Results {
-    date: chrono::NaiveDate,
+#[derive(Debug, serde::Deserialize)]
+struct Daylight {
     sunrise: chrono::NaiveTime,
     sunset: chrono::NaiveTime,
 }
 
-// TODO: Add section to README regarding how to delete the cache file.
+#[derive(Debug, serde::Deserialize)]
+struct Geolocation {
+    latitude: f32,
+    longitude: f32,
+}
 
-fn get_times(
-    client: &reqwest::blocking::Client,
-    location: &config::Location,
-    fallback: &config::Fallback,
-) -> (chrono::NaiveTime, chrono::NaiveTime) {
-    match (location.longitude, location.latitude) {
-        (Some(longitude), Some(latitude)) => {
-            let url = format!(
-                "https://api.sunrisesunset.io/json?lng={longitude}&lat={latitude}&time_format=24",
-            );
+/// Sets the system's theme based on the time of day.
+pub(crate) fn run() -> Result<(), super::Error> {
+    let now = chrono::Local::now();
+    let today = now.date_naive();
 
-            match client.get(&url).send() {
-                Ok(response) => {
-                    let body = response.text().expect("expected response to be valid json");
-                    let data: TimeResponse = serde_json::from_str(&body).unwrap();
+    // Check if the user has disabled the application.
+    if is_disabled(&today)? {
+        return Ok(());
+    }
 
-                    // TODO: Don't panic on cache-related operations.
-                    let times_cache = get_cache_home().join("times");
-                    std::fs::create_dir_all(&times_cache).unwrap();
-                    let cache_file = times_cache.join(&data.results.date.to_string());
-                    std::fs::write(
-                        &cache_file,
-                        format!("{},{}", data.results.sunrise, data.results.sunset),
-                    )
-                    .expect("failed to cache times data");
+    // Read the configuration file.
+    let config = get_config()?;
 
-                    (data.results.sunrise, data.results.sunset)
-                }
-                Err(_) => return (fallback.sunrise, fallback.sunset),
+    // Get sunrise/sunset times.
+    let daylight = get_daylight(&today, &config.location, &config.fallback)?;
+
+    // Set theme based on current time.
+    if now.time() >= daylight.sunrise && now.time() < daylight.sunset {
+        crate::set_light_theme()
+    } else {
+        crate::set_dark_theme()
+    }
+}
+
+/// Determines if the application is disabled based on the presence and
+/// contents of the `.disabled` file in `$XDG_CONFIG_HOME/knight`.
+///
+/// The application is considered disabled if:
+///
+/// - The file exists, and
+/// - The file is either empty or contains a date that not yet passed.
+///
+/// An empty file indicates that the application is disabled indefinitely.
+///
+/// If the file contains a date in `YYYY-MM-DD` format, it specifies when the
+/// file should be deleted, thereby re-enabling the application.
+///
+/// # Errors
+///
+/// This function returns an error if:
+///
+/// - The `.disabled` file cannot be read.
+/// - The `.disabled` file cannot be removed.
+fn is_disabled(today: &chrono::NaiveDate) -> Result<bool, super::Error> {
+    let disabled_file = crate::get_disabled_file();
+
+    if let Some(parent) = disabled_file.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
+    if !disabled_file.exists() {
+        return Ok(false);
+    }
+
+    // This file should contain the date for when to delete it.
+    let content = std::fs::read_to_string(&disabled_file)?;
+
+    if content.is_empty() {
+        // An empty file indicates to disable the program indefinitely.
+        return Ok(true);
+    }
+
+    match chrono::NaiveDate::from_str(&content) {
+        Ok(date) => match date.cmp(&today) {
+            Ordering::Equal | Ordering::Greater => Ok(true),
+            Ordering::Less => {
+                // The date has passed; re-enable the application.
+                std::fs::remove_file(&disabled_file)?;
+                Ok(false)
             }
-        }
-        (Some(_), None) | (None, Some(_)) => {
-            panic!("both longitude and latitude must be set")
-        }
-        (None, None) => {
-            // This case happens when the `location` feature is enabled,
-            // but there was a problem getting the user's location.
-            (fallback.sunrise, fallback.sunset)
+        },
+        Err(err) => {
+            log::error!("request to disable the application denied: {err}");
+            std::fs::remove_file(&disabled_file)?;
+            Ok(false)
         }
     }
+}
+
+fn get_config() -> Result<crate::Config, super::Error> {
+    let configuration_file = crate::get_config_home().join("Knight.toml");
+
+    if let Some(parent) = configuration_file.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
+    match std::fs::read_to_string(&configuration_file) {
+        Ok(content) => {
+            let config: crate::Config = toml::from_str(&content)?;
+            Ok(config)
+        }
+        Err(err) => match err.kind() {
+            std::io::ErrorKind::NotFound => Ok(crate::Config::default()),
+            _ => Err(err.into()),
+        },
+    }
+}
+
+fn get_daylight(
+    today: &chrono::NaiveDate,
+    location: &crate::Location,
+    fallback: &crate::Fallback,
+) -> Result<Daylight, super::Error> {
+    if !location.enabled {
+        // Dynamic sunrise/sunset times were disabled.
+        return Ok(Daylight {
+            sunrise: fallback.sunrise,
+            sunset: fallback.sunset,
+        });
+    }
+
+    // If the application ran already today, the sunrise/sunset times should
+    // have been cached to reduce load on external APIs.
+    let cache_file = crate::get_cache_home()
+        .join("times")
+        .join(today.to_string());
+
+    if let Ok(content) = std::fs::read_to_string(&cache_file) {
+        if let Some(daylight) = parse_cached_times(&content) {
+            return Ok(daylight);
+        }
+
+        // Failed to get valid times from cached values. Fallthrough.
+    }
+
+    // Call external API to get sunrise/sunset times.
+    let client = reqwest::blocking::Client::new();
+    let geolocation = match (location.latitude, location.longitude) {
+        (Some(latitude), Some(longitude)) => Some(Geolocation {
+            latitude,
+            longitude,
+        }),
+        _ => get_geolocation(&client)?,
+    };
+
+    if let Some(g) = geolocation {
+        let latitude = g.latitude;
+        let longitude = g.longitude;
+
+        let url = format!(
+            "https://api.sunrisesunset.io/json\
+            ?lat={latitude}\
+            &lng={longitude}\
+            &time_format=24"
+        );
+
+        if let Ok(response) = client.get(url).send() {
+            let body = response.text().expect("failed to decode response");
+            let data: Daylight =
+                serde_json::from_str(&body).expect("expected body to be valid json");
+
+            let contents = format!("{},{}", data.sunrise, data.sunset);
+            std::fs::write(&cache_file, &contents)?;
+
+            return Ok(data);
+        }
+    }
+
+    Ok(Daylight {
+        sunrise: fallback.sunrise,
+        sunset: fallback.sunset,
+    })
+}
+
+fn parse_cached_times(content: &str) -> Option<Daylight> {
+    if let Some((sr, ss)) = content.split_once(",") {
+        if let (Ok(sunrise), Ok(sunset)) = (
+            chrono::NaiveTime::from_str(sr),
+            chrono::NaiveTime::from_str(ss),
+        ) {
+            return Some(Daylight { sunrise, sunset });
+        }
+    }
+
+    None
+}
+
+fn get_geolocation(
+    client: &reqwest::blocking::Client,
+) -> Result<Option<Geolocation>, super::Error> {
+    let cache_file = crate::get_cache_home().join("location.txt");
+
+    if let Some(parent) = cache_file.parent() {
+        std::fs::create_dir_all(&parent)?;
+    }
+
+    if let Ok(content) = std::fs::read_to_string(&cache_file) {
+        if let Some(geolocation) = parse_cached_geolocation(&content) {
+            return Ok(Some(geolocation));
+        }
+    }
+
+    if let Ok(response) = client.get("https://freeipapi.com/api/json/").send() {
+        let body = response.text().expect("failed to decode response");
+        let data: Geolocation =
+            serde_json::from_str(&body).expect("expected body to be valid json");
+
+        let cache_contents = format!("{},{}", data.latitude, data.longitude);
+        std::fs::write(&cache_file, &cache_contents)?;
+
+        return Ok(Some(data));
+    }
+
+    Ok(None)
+}
+
+fn parse_cached_geolocation(content: &str) -> Option<Geolocation> {
+    if let Some((lat, lng)) = content.split_once(",") {
+        if let (Ok(latitude), Ok(longitude)) = (lat.parse::<f32>(), lng.parse::<f32>()) {
+            return Some(Geolocation {
+                latitude,
+                longitude,
+            });
+        }
+    }
+
+    None
 }

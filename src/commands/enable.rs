@@ -1,7 +1,7 @@
 use crate::commands;
 
 pub fn run() -> Result<(), commands::Error> {
-    let lock_file = crate::get_lock_file();
+    let lock_file = crate::get_disabled_file();
     std::fs::create_dir_all(lock_file.parent().unwrap())?;
 
     if let Err(err) = std::fs::remove_file(&lock_file) {

@@ -1,5 +1,9 @@
+#![warn(missing_docs)]
+
 pub mod commands;
-pub mod config;
+mod config;
+
+pub(crate) use config::{Config, Fallback, Location};
 
 pub fn get_config_home() -> std::path::PathBuf {
     dirs::config_dir()
@@ -13,7 +17,7 @@ pub fn get_cache_home() -> std::path::PathBuf {
         .join("knight")
 }
 
-pub fn get_lock_file() -> std::path::PathBuf {
+pub fn get_disabled_file() -> std::path::PathBuf {
     get_config_home().join(".disabled")
 }
 
