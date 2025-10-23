@@ -9,7 +9,7 @@ SERVICE_CONTENT="\
 Description=Automatically switch between light and dark theme
 
 [Service]
-ExecStart=/usr/bin/env knight start
+ExecStart=$HOME/.cargo/bin/knight start
 
 [Install]
 WantedBy=default.target"
