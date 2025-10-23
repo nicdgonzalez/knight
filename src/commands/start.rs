@@ -18,8 +18,8 @@ pub struct Start {
     #[clap(
         short,
         long,
-        default_value = "60",
-        help = "Time to wait between checks (in seconds)"
+        default_value = "3000",
+        help = "Time to wait between checks (in milliseconds)"
     )]
     interval: u64,
 }
