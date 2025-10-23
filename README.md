@@ -76,14 +76,41 @@ Then run the following commands:
 systemctl --user daemon-reload
 
 # Start the service
-systemctl --user start "$(basename "$SERVICE_FILE")"
+systemctl --user start knight.service
 
 # Persist after reboots
-systemctl --user enable "$(basename "$SERVICE_FILE")"
+systemctl --user enable knight.service
 
 # Check if the service is running
-systemctl --user status "$(basename "$SERVICE_FILE")"
+systemctl --user status knight.service
 ```
+
+### Stopping the program
+
+To stop the program until the next reboot:
+
+```bash
+systemctl --user stop knight.service
+```
+
+To stop the program indefinitely:
+
+```bash
+systemctl --user disable knight.service
+systemctl --user stop knight.service
+```
+
+To uninstall:
+
+```bash
+cargo uninstall knight
+rm -rf "${XDG_CACHE_HOME:-$HOME/.cache}/knight" "${XDG_CONFIG_HOME:-$HOME/.config}/knight" "${XDG_STATE_HOME:-$HOME/.local/share}/knight"
+```
+
+## Roadmap
+
+- [ ] Disable until next sunrise/sunset when the user manually changes the
+  theme.
 
 ## Attributions
 
