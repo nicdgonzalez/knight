@@ -3,14 +3,17 @@ use std::path::Path;
 use std::process::Command;
 
 use anyhow::Context as _;
+use chrono::{DateTime, Local};
 use tracing::{debug, warn};
 
 use crate::theme::Theme;
 
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct State {
-    pub disabled: bool,
     pub theme: Theme,
+    pub disabled: bool,
+    pub manually_override_until: Option<DateTime<Local>>,
+    pub last_known_theme: Option<Theme>,
 }
 
 impl Default for State {
@@ -21,8 +24,10 @@ impl Default for State {
         });
 
         Self {
-            disabled: false,
             theme,
+            disabled: false,
+            manually_override_until: None,
+            last_known_theme: Some(theme),
         }
     }
 }
