@@ -1,6 +1,8 @@
 use anyhow::Context as _;
 
-use crate::{commands::Run, state::State};
+use crate::commands::Run;
+use crate::persistent::Persistent;
+use crate::state::State;
 
 #[derive(Debug, clap::Args)]
 pub struct Enable;
@@ -13,7 +15,7 @@ impl Run for Enable {
 
         let mut state = State::from_file(&state_path).unwrap_or_default();
         state.disabled = false;
-        state.manually_override_until = None;
+        state.override_until = None;
 
         state
             .save(&state_path)

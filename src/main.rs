@@ -11,6 +11,7 @@ mod cache;
 mod commands;
 mod config;
 mod daylight;
+mod persistent;
 mod state;
 mod theme;
 

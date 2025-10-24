@@ -6,14 +6,13 @@ use anyhow::Context as _;
 use chrono::{DateTime, Local};
 use tracing::{debug, warn};
 
-use crate::theme::Theme;
+use crate::{persistent::Persistent, theme::Theme};
 
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct State {
     pub theme: Theme,
     pub disabled: bool,
-    pub manually_override_until: Option<DateTime<Local>>,
-    pub last_known_theme: Option<Theme>,
+    pub override_until: Option<DateTime<Local>>,
 }
 
 impl Default for State {
@@ -26,23 +25,22 @@ impl Default for State {
         Self {
             theme,
             disabled: false,
-            manually_override_until: None,
-            last_known_theme: Some(theme),
+            override_until: None,
         }
     }
 }
 
-impl State {
-    pub fn from_file(file: &Path) -> anyhow::Result<Self> {
+impl Persistent for State {
+    fn from_file(file: &Path) -> anyhow::Result<Self> {
         let text = fs::read_to_string(file).context("failed to read JSON file")?;
         let data = serde_json::from_str::<Self>(&text).context("failed to parse JSON contents")?;
         Ok(data)
     }
 
-    pub fn save(self, file: &Path) -> anyhow::Result<()> {
+    fn save(&self, file: &Path) -> anyhow::Result<()> {
         let parent = file.parent().context("expected path to a file")?;
         fs::create_dir_all(parent)?;
-        let contents = serde_json::to_string(&self)?;
+        let contents = serde_json::to_string(self)?;
         fs::write(file, &contents)?;
         Ok(())
     }

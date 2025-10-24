@@ -1,6 +1,8 @@
 use anyhow::Context as _;
 
-use crate::{commands::Run, state::State};
+use crate::commands::Run;
+use crate::persistent::Persistent;
+use crate::state::State;
 
 #[derive(Debug, clap::Args)]
 pub struct Disable;

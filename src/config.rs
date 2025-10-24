@@ -4,6 +4,8 @@ use std::path::Path;
 use anyhow::Context;
 use chrono::NaiveTime;
 
+use crate::persistent::Persistent;
+
 /// Represents the `Knight.toml` configuration file.
 #[derive(Debug, Clone, Copy, Default, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
@@ -15,15 +17,14 @@ pub struct Config {
     pub location: Location,
 }
 
-impl Config {
-    pub fn from_file(file: &Path) -> anyhow::Result<Self> {
+impl Persistent for Config {
+    fn from_file(file: &Path) -> anyhow::Result<Self> {
         let text = fs::read_to_string(file).context("failed to read TOML file")?;
         let data = toml::from_str::<Self>(&text).context("failed to parse TOML contents")?;
         Ok(data)
     }
 
-    /// Write `self` to a file in `TOML` format.
-    pub fn save(&self, file: &Path) -> anyhow::Result<()> {
+    fn save(&self, file: &Path) -> anyhow::Result<()> {
         let parent = file.parent().context("expected path to a file")?;
         fs::create_dir_all(parent)?;
         let contents = toml::to_string(self)?;
