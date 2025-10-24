@@ -42,7 +42,7 @@ impl Run for Start {
             path.extend(["knight", "cache.json"]);
             path
         };
-        let interval = Duration::from_secs(self.interval);
+        let interval = Duration::from_millis(self.interval);
         let client = Client::new();
 
         loop {
