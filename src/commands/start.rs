@@ -60,14 +60,15 @@ impl Run for Start {
                 .unwrap_or(Theme::Light);
 
             if state.theme != current_theme {
-                handle_theme_changed_manually(
-                    current_theme,
-                    &now,
-                    sunrise,
-                    sunset,
-                    &mut state,
-                    &state_path,
-                );
+                // Temporarily disable theme switcher.
+                warn!("user manually changed system theme to: {:?}", current_theme);
+                state.theme = current_theme;
+                state.override_until = Some(get_next_cycle(&now, sunset, sunrise));
+            
+                if let Err(err) = state.save(state_path) {
+                    error!("failed to save updated state: {err}");
+                }
+
                 maybe_sleep(next_tick);
                 continue;
             }
@@ -78,7 +79,10 @@ impl Run for Start {
                 Theme::Dark
             };
 
-            apply_theme(target_theme, &mut state, &state_path);
+            if state.theme != target_theme {
+                apply_theme(target_theme, &mut state, &state_path);
+            }
+
             maybe_sleep(next_tick);
         }
     }
@@ -260,24 +264,6 @@ fn is_daytime(now: &DateTime<Local>, sunrise: NaiveTime, sunset: NaiveTime) -> b
     }
 }
 
-fn handle_theme_changed_manually(
-    current_theme: Theme,
-    now: &DateTime<Local>,
-    sunrise: NaiveTime,
-    sunset: NaiveTime,
-    state: &mut State,
-    state_path: &Path,
-) {
-    warn!("user manually changed system theme to: {:?}", current_theme);
-
-    state.theme = current_theme;
-    state.override_until = Some(get_next_cycle(now, sunset, sunrise));
-
-    if let Err(err) = state.save(state_path) {
-        error!("failed to save updated state: {err}");
-    }
-}
-
 /// When the user changes the theme manually, we temporarily disable the program until the
 /// next-next time we're ready for a theme change. This is so we aren't fighting with the user
 /// over the current theme, but we also don't want the user to forget to turn us back on.
@@ -302,15 +288,13 @@ fn get_next_cycle(now: &DateTime<Local>, sunset: NaiveTime, sunrise: NaiveTime) 
 
 /// Send the request to the system to update the user's theme.
 fn apply_theme(target_theme: Theme, state: &mut State, state_path: &Path) {
-    if state.theme != target_theme {
-        if let Err(err) = update_system_theme(target_theme) {
-            error!("failed to set light theme: {err}");
-        }
+    if let Err(err) = update_system_theme(target_theme) {
+        error!("failed to set light theme: {err}");
+    }
 
-        state.theme = target_theme;
+    state.theme = target_theme;
 
-        if let Err(err) = state.save(state_path) {
-            error!("failed to save updated state: {err}");
-        }
+    if let Err(err) = state.save(state_path) {
+        error!("failed to save updated state: {err}");
     }
 }
